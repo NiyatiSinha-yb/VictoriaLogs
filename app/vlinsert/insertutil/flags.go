@@ -18,4 +18,9 @@ var (
 	// DefaultMsgValue is the default value for _msg field if the ingested log entry doesn't contain it.
 	DefaultMsgValue = flag.String("defaultMsgValue", "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
 		"Default value for _msg field if the ingested log entry doesn't contain it; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field")
+
+	// AddRecordIdentity is used to enable batch_id and offset inclusion to each inserted row - ref app/vlinsert/insertutil/common_params.go
+	//By default set it to true
+	AddRecordIdentity = flag.Bool("insert.addRecordIdentity", true, "Whether to automatically attach _batch_id and _row_offset system fields to ingested log records for unique row identification")
+
 )
