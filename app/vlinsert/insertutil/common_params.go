@@ -141,39 +141,41 @@ func removeEmptyTokens(a []string) []string {
 	return dst
 }
 
-//USECASE- Unique ID Generation - Authored by NiyatiSinha-yb
+// USECASE- Unique ID Generation - Authored by NiyatiSinha-yb
 // batchIDSeq and processSeed back newBatchID. processSeed is randomized once
 // per process start so that two VictoriaLogs processes generating a batchID
 // at the same nanosecond with the same sequence value is not enough to
 // collide — all three components would have to match.
 var (
-        batchIDSeq  atomic.Uint64
-        processSeed = fastrand.Uint32()
+	batchIDSeq  atomic.Uint64
+	processSeed = fastrand.Uint32()
 )
+
 // newBatchID returns a value unique for the lifetime of this process,
 // identifying every row processed by one logMessageProcessor instance (one
 // per ingest HTTP request). Deliberately dependency-free — this module has
 // no UUID library in go.mod, and this codebase already prefers hand-rolled
 // primitives (fastrand, fasttime) over adding third-party equivalents.
 func newBatchID() string {
-        seq := batchIDSeq.Add(1)
-        return strconv.FormatUint(uint64(processSeed), 36) + "-" +
-                strconv.FormatInt(time.Now().UnixNano(), 36) + "-" +
-                strconv.FormatUint(seq, 36)
+	seq := batchIDSeq.Add(1)
+	return strconv.FormatUint(uint64(processSeed), 36) + "-" +
+		strconv.FormatInt(time.Now().UnixNano(), 36) + "-" +
+		strconv.FormatUint(seq, 36)
 }
+
 // setField overwrites the value of an existing field named `name` in
 // fields, or appends a new field if none exists. Used for the
 // system-assigned _batch_id/_row_offset fields so that a client JSON
 // payload which happens to already use one of those keys gets overwritten
 // rather than producing two fields with the same Name in one row.
 func setField(fields []logstorage.Field, name, value string) []logstorage.Field {
-        for i := range fields {
-                if fields[i].Name == name {
-                        fields[i].Value = value
-                        return fields
-                }
-        }
-        return append(fields, logstorage.Field{Name: name, Value: value})
+	for i := range fields {
+		if fields[i].Name == name {
+			fields[i].Value = value
+			return fields
+		}
+	}
+	return append(fields, logstorage.Field{Name: name, Value: value})
 }
 
 // GetCommonParamsForSyslog returns common params needed for parsing syslog messages and storing them to the given tenantID.
@@ -251,7 +253,7 @@ type logMessageProcessor struct {
 	cp *CommonParams
 	lr *logstorage.LogRows
 
-	//USECASE- batch id and rowOffset defined in struct for Unique ID Generation - Authored by NiyatiSinha-yb
+	// USECASE- batch id and rowOffset defined in struct for Unique ID Generation - Authored by NiyatiSinha-yb
 	// batchID is constant for every row this processor ever handles — one
 	// logMessageProcessor is created per ingest HTTP request (see
 	// NewLogMessageProcessor), so this is effectively "one UUID per
@@ -299,30 +301,36 @@ func (lmp *logMessageProcessor) AddRow(timestamp int64, fields []logstorage.Fiel
 	lmp.mu.Lock()
 	defer lmp.mu.Unlock()
 
-	//USECASE- set a new batch id and row offset - Authored by NiyatiSinha-yb
+	// USECASE- set a new batch id and row offset - Authored by NiyatiSinha-yb
 	if *AddRecordIdentity {
-			fields = setField(fields, "_batch_id", lmp.batchID)
-			fields = setField(fields, "_row_offset", strconv.FormatUint(lmp.rowOffset, 10))
+		fields = setField(fields, "_batch_id", lmp.batchID)
+		fields = setField(fields, "_row_offset", strconv.FormatUint(lmp.rowOffset, 10))
 	}
 
 	lmp.unflushedRows++
 	n := logstorage.EstimatedJSONRowLen(fields)
 	lmp.unflushedBytes += n
 
-	if len(fields)-2 > *MaxFieldsPerLine {
+	maxAllowed := *MaxFieldsPerLine
+	if *AddRecordIdentity {
+		//Add 2 to take the count of the two coulumns we added: batch_id, offset
+		maxAllowed += 2
+	}
+
+	if len(fields) > maxAllowed {
 		line := logstorage.MarshalFieldsToJSON(nil, fields)
 		logger.Warnf("dropping log line with %d fields; it exceeds -insert.maxFieldsPerLine=%d; %s", len(fields), *MaxFieldsPerLine, line)
 		rowsDroppedTotalTooManyFields.Inc()
 		return
 	}
 
-	//USECASE- update rowoffset counter - Authored by NiyatiSinha-yb
+	// USECASE- update rowoffset counter - Authored by NiyatiSinha-yb
 	if *AddRecordIdentity {
-                // Only advance the counter once the row is confirmed to be stored
-                // (past the field-count check above), so _row_offset has no gaps
-                // relative to what's actually queryable.
-                lmp.rowOffset++
-    }
+		// Only advance the counter once the row is confirmed to be stored
+		// (past the field-count check above), so _row_offset has no gaps
+		// relative to what's actually queryable.
+		lmp.rowOffset++
+	}
 
 	lmp.lr.MustAdd(lmp.cp.TenantID, timestamp, fields, streamFieldsLen)
 
@@ -349,30 +357,35 @@ func (lmp *logMessageProcessor) AddInsertRow(r *logstorage.InsertRow) {
 	lmp.mu.Lock()
 	defer lmp.mu.Unlock()
 
-	//USECASE- add batch_id and row_offset for the added record/row - Authored by NiyatiSinha-yb
-	//Treating AddRecordIdentity as a feature flag
+	// USECASE- add batch_id and row_offset for the added record/row - Authored by NiyatiSinha-yb
+	// Treating AddRecordIdentity as a feature flag
 	if *AddRecordIdentity {
-                r.Fields = setField(r.Fields, "_batch_id", lmp.batchID)
-                r.Fields = setField(r.Fields, "_row_offset", strconv.FormatUint(lmp.rowOffset, 10))
-        }
+		r.Fields = setField(r.Fields, "_batch_id", lmp.batchID)
+		r.Fields = setField(r.Fields, "_row_offset", strconv.FormatUint(lmp.rowOffset, 10))
+	}
 
 	lmp.unflushedRows++
 	n := logstorage.EstimatedJSONRowLen(r.Fields)
 	lmp.unflushedBytes += n
-	
 
-	if len(r.Fields) > *MaxFieldsPerLine {
+	maxAllowed := *MaxFieldsPerLine
+	if *AddRecordIdentity {
+		//Add 2 to take the count of the two coulumns we added: batch_id, offset
+		maxAllowed += 2
+	}
+
+	if len(r.Fields) > maxAllowed {
 		line := logstorage.MarshalFieldsToJSON(nil, r.Fields)
 		logger.Warnf("dropping log line with %d fields; it exceeds -insert.maxFieldsPerLine=%d; %s", len(r.Fields), *MaxFieldsPerLine, line)
 		rowsDroppedTotalTooManyFields.Inc()
 		return
 	}
 
-	//USECASE- update rowOffset once it has been set for a row  - Authored by NiyatiSinha-yb
-	//Treating AddRecordIdentity as a feature flag
+	// USECASE- update rowOffset once it has been set for a row - Authored by NiyatiSinha-yb
+	// Treating AddRecordIdentity as a feature flag
 	if *AddRecordIdentity {
-                lmp.rowOffset++
-    }
+		lmp.rowOffset++
+	}
 
 	lmp.lr.MustAddInsertRow(r)
 
@@ -424,17 +437,20 @@ func (cp *CommonParams) NewLogMessageProcessor(protocolName string, isStreamMode
 	bytesIngestedTotal := metrics.GetOrCreateCounter(fmt.Sprintf("vl_bytes_ingested_total{type=%q}", protocolName))
 	flushDuration := metrics.GetOrCreateSummary(fmt.Sprintf("vl_insert_flush_duration_seconds{type=%q}", protocolName))
 
-	//USECASE- update logMessageProcessor to include batchID  - Authored by NiyatiSinha-yb
-	lmp := &logMessageProcessor{
-		cp: cp,
-		lr: lr,
+	var batchID string
+	if *AddRecordIdentity {
+		batchID = newBatchID()
+	}
 
-		batchID: newBatchID(),
+	// USECASE- update logMessageProcessor to include batchID - Authored by NiyatiSinha-yb
+	lmp := &logMessageProcessor{
+		cp:                 cp,
+		lr:                 lr,
+		batchID:            batchID,
 		rowsIngestedTotal:  rowsIngestedTotal,
 		bytesIngestedTotal: bytesIngestedTotal,
 		flushDuration:      flushDuration,
-
-		stopCh: make(chan struct{}),
+		stopCh:             make(chan struct{}),
 	}
 
 	if isStreamMode {
