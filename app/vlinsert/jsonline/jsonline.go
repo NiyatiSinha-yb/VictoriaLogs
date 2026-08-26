@@ -53,6 +53,7 @@ func RequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer protoparserutil.PutUncompressedReader(reader)
 
+	//if AddRecordIdentity is enabled then a new unique batch id gets associated with lmp - authored by NiyatiSinha-yb
 	lmp := cp.NewLogMessageProcessor("jsonline", true)
 	streamName := fmt.Sprintf("remoteAddr=%s, requestURI=%q", httpserver.GetQuotedRemoteAddr(r), r.RequestURI)
 	err = processStreamInternal(streamName, reader, cp.TimeFields, cp.MsgFields, cp.PreserveJSONKeys, lmp)
