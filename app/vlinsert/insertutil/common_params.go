@@ -312,10 +312,6 @@ func (lmp *logMessageProcessor) AddRow(timestamp int64, fields []logstorage.Fiel
 	lmp.unflushedBytes += n
 
 	maxAllowed := *MaxFieldsPerLine
-	if *AddRecordIdentity {
-		//Add 2 to take the count of the two coulumns we added: batch_id, offset
-		maxAllowed += 2
-	}
 
 	if len(fields) > maxAllowed {
 		line := logstorage.MarshalFieldsToJSON(nil, fields)
@@ -369,10 +365,6 @@ func (lmp *logMessageProcessor) AddInsertRow(r *logstorage.InsertRow) {
 	lmp.unflushedBytes += n
 
 	maxAllowed := *MaxFieldsPerLine
-	if *AddRecordIdentity {
-		//Add 2 to take the count of the two coulumns we added: batch_id, offset
-		maxAllowed += 2
-	}
 
 	if len(r.Fields) > maxAllowed {
 		line := logstorage.MarshalFieldsToJSON(nil, r.Fields)
