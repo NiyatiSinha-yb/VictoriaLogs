@@ -309,7 +309,7 @@ func (lmp *logMessageProcessor) AddRow(timestamp int64, fields []logstorage.Fiel
 	n := logstorage.EstimatedJSONRowLen(fields)
 	lmp.unflushedBytes += n
 
-	if len(fields) > *MaxFieldsPerLine {
+	if len(fields)-2 > *MaxFieldsPerLine {
 		line := logstorage.MarshalFieldsToJSON(nil, fields)
 		logger.Warnf("dropping log line with %d fields; it exceeds -insert.maxFieldsPerLine=%d; %s", len(fields), *MaxFieldsPerLine, line)
 		rowsDroppedTotalTooManyFields.Inc()
