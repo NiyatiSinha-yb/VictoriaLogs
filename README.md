@@ -36,3 +36,9 @@ Feel free asking any questions regarding VictoriaLogs:
 If you like VictoriaLogs and want to contribute, then please [read these docs](https://docs.victoriametrics.com/victoriametrics/contributing/).
 
 Thank you for your cooperation!
+
+
+BATCH ID vs UUID (1 million ops)
+
+Exe Time: 35 ns/ op - 200 ns/op
+Memory : 48 Bytes/op - 36 Bytes/op
